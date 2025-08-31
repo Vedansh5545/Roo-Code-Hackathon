@@ -8,6 +8,7 @@ import re
 import math
 import requests
 from typing import List, Dict, Any
+from urllib.parse import quote_plus
 
 # Simple Flask backend that:
 # 1) Extracts text from an uploaded PDF/TXT
@@ -35,6 +36,7 @@ RAG_STATE = {
 }
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")  # used for embeddings + generation
+USER_AGENT = os.getenv("USER_AGENT", "RooRAG/1.0 (+https://example.com)")
 
 # Google Generative Language API endpoints (Gemini)
 EMBEDDING_MODEL_ENDPOINT = (
@@ -152,7 +154,7 @@ def _fetch_reference_text(url: str) -> str:
     - Else we pull the HTML and strip tags.
     """
     try:
-        r = requests.get(url, timeout=30, headers={"User-Agent": "RAGBot/1.0"})
+        r = requests.get(url, timeout=30, headers={"User-Agent": USER_AGENT})
         r.raise_for_status()
         ctype = r.headers.get("Content-Type", "").lower()
         if "pdf" in ctype or url.lower().endswith(".pdf"):
@@ -264,6 +266,88 @@ def _answer_with_context(question: str) -> Dict[str, Any]:
         return {"answer": "Error generating answer.", "sources": []}
 
 
+# -----------------------
+# Web Search (Learn More)
+# -----------------------
+def _ddg_instant_answer(query: str, max_results: int = 5) -> List[Dict[str, str]]:
+    """Use DuckDuckGo Instant Answer API to get related links.
+    Returns a list of {title, url}.
+    """
+    url = f"https://api.duckduckgo.com/?q={quote_plus(query)}&format=json&no_html=1&no_redirect=1"
+    results: List[Dict[str, str]] = []
+    try:
+        r = requests.get(url, timeout=20, headers={"User-Agent": USER_AGENT})
+        r.raise_for_status()
+        data = r.json()
+        # Abstract
+        abstract_url = (data.get("AbstractURL") or "").strip()
+        abstract_text = (data.get("AbstractText") or data.get("Heading") or "").strip()
+        if abstract_url and abstract_text:
+            results.append({"title": abstract_text, "url": abstract_url})
+
+        # RelatedTopics can be nested
+        def _collect_topics(items):
+            for it in items or []:
+                if "FirstURL" in it and it.get("Text"):
+                    yield {"title": it["Text"].strip(), "url": it["FirstURL"].strip()}
+                elif "Topics" in it:
+                    for sub in _collect_topics(it.get("Topics")):
+                        yield sub
+
+        seen = set(u["url"] for u in results)
+        for item in _collect_topics(data.get("RelatedTopics")):
+            if item["url"] not in seen:
+                results.append(item)
+                seen.add(item["url"])
+            if len(results) >= max_results:
+                break
+    except Exception as e:
+        print("DDG instant error:", str(e))
+    return results[:max_results]
+
+
+def _ddg_html_search(query: str, max_results: int = 5) -> List[Dict[str, str]]:
+    """Fallback: scrape DuckDuckGo HTML (non-JS) results page for links.
+    Very light regex parsing to avoid adding heavy deps.
+    """
+    url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
+    results: List[Dict[str, str]] = []
+    try:
+        r = requests.get(url, timeout=20, headers={"User-Agent": USER_AGENT})
+        r.raise_for_status()
+        html = r.text
+        # Look for anchors with class result__a
+        # Example: <a rel="nofollow" class="result__a" href="https://...">Title</a>
+        for m in re.finditer(r"<a[^>]*class=\"result__a\"[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>", html, flags=re.I|re.S):
+            href = re.sub(r"&amp;", "&", m.group(1)).strip()
+            # Strip HTML tags from title
+            title = re.sub(r"<[^>]+>", " ", m.group(2))
+            title = re.sub(r"\s+", " ", title).strip()
+            if href and title:
+                results.append({"title": title, "url": href})
+            if len(results) >= max_results:
+                break
+    except Exception as e:
+        print("DDG HTML error:", str(e))
+    return results[:max_results]
+
+
+def _learn_more_search(query: str, max_results: int = 5) -> List[Dict[str, str]]:
+    """Try Instant Answer first, then HTML scraping. Deduplicate and return."""
+    items = _ddg_instant_answer(query, max_results=max_results)
+    if len(items) < max_results:
+        extra = _ddg_html_search(query, max_results=max_results * 2)
+        # Deduplicate by URL
+        seen = set(i["url"] for i in items)
+        for it in extra:
+            if it["url"] not in seen:
+                items.append(it)
+                seen.add(it["url"])
+            if len(items) >= max_results:
+                break
+    return items[:max_results]
+
+
 @app.route("/api/summarize", methods=["POST"])
 def summarize():
     try:
@@ -323,6 +407,23 @@ def summarize():
     except Exception as e:
         print("Error in /api/summarize:", str(e))
         return jsonify({"error": "Summarization failed."}), 500
+
+
+@app.route("/api/learn", methods=["POST"])
+def learn():
+    """Perform a lightweight web search for the given query and return 4-5 links.
+    Body: {"q": "..."}
+    """
+    try:
+        data = request.get_json(force=True)
+        q = (data.get("q") or "").strip()
+        if not q:
+            return jsonify({"links": []})
+        links = _learn_more_search(q, max_results=5)
+        return jsonify({"links": links})
+    except Exception as e:
+        print("/api/learn error:", str(e))
+        return jsonify({"links": []}), 200
 
 
 @app.route("/api/ask", methods=["POST"])

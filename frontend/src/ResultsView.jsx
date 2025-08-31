@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 // renders the tabs (Summary/Key/ELI5/Action/Learn) and the chat mode. Chat calls /api/ask and shows a right sidebar.
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:5000";
 
@@ -9,6 +9,7 @@ export default function ResultsView({ data }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [sidebarTab, setSidebarTab] = useState(null); // null | 'summary' | 'key' | 'eli5' | 'action' | 'learn'
+  const [learnResults, setLearnResults] = useState({ loading: false, items: [], error: null });
 
   const summary = data?.summary || "";
   const key_points = data?.key_points || [];
@@ -83,13 +84,41 @@ export default function ResultsView({ data }) {
     return String(firstSentence).slice(0, 120);
   }, [summary, key_points]);
 
-  const learnLinks = useMemo(() => {
+  // Trigger backend learn-more search when Learn tab is active
+  useEffect(() => {
+    if (tab !== "learn") return;
+    const q = String(learnTopic || "").trim();
+    if (!q) return;
+    let aborted = false;
+    setLearnResults((s) => ({ ...s, loading: true, error: null }));
+    fetch(`${API_BASE}/api/learn`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ q }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (aborted) return;
+        const items = Array.isArray(data?.links) ? data.links : [];
+        setLearnResults({ loading: false, items, error: null });
+      })
+      .catch(() => {
+        if (aborted) return;
+        setLearnResults({ loading: false, items: [], error: "Search failed" });
+      });
+    return () => {
+      aborted = true;
+    };
+  }, [tab, learnTopic]);
+
+  // Fallback static search links (if backend returns nothing)
+  const fallbackLearnLinks = useMemo(() => {
     const q = encodeURIComponent(learnTopic);
     return [
-      { label: "YouTube", url: `https://www.youtube.com/results?search_query=${q}` },
-      { label: "Stack Overflow", url: `https://stackoverflow.com/search?q=${q}` },
-      { label: "GeeksforGeeks", url: `https://www.geeksforgeeks.org/?s=${q}` },
-      { label: "Wikipedia", url: `https://en.wikipedia.org/w/index.php?search=${q}` },
+      { title: `DuckDuckGo: ${learnTopic}`, url: `https://duckduckgo.com/?q=${q}` },
+      { title: `YouTube: ${learnTopic}`, url: `https://www.youtube.com/results?search_query=${q}` },
+      { title: `Wikipedia: ${learnTopic}`, url: `https://en.wikipedia.org/w/index.php?search=${q}` },
+      { title: `Stack Overflow: ${learnTopic}`, url: `https://stackoverflow.com/search?q=${q}` },
     ];
   }, [learnTopic]);
 
@@ -202,15 +231,20 @@ export default function ResultsView({ data }) {
             </ul>
           )}
           {sidebarTab === "learn" && (
-            <ul style={{ margin: 0, paddingLeft: 18 }}>
-              {learnLinks.map((l, i) => (
-                <li key={i}>
-                  <a href={l.url} target="_blank" rel="noreferrer">
-                    {l.label}: {learnTopic}
-                  </a>
-                </li>
-              ))}
-            </ul>
+            <div>
+              {learnResults.loading && (
+                <div style={{ color: "#94a3b8", marginBottom: 6 }}>Searching…</div>
+              )}
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {(learnResults.items.length ? learnResults.items : fallbackLearnLinks).map((l, i) => (
+                  <li key={i}>
+                    <a href={l.url} target="_blank" rel="noreferrer">
+                      {l.title || l.label || l.url}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       )}
@@ -296,11 +330,14 @@ export default function ResultsView({ data }) {
           {tab === "learn" && (
             <section>
               <h3>🧠 Learn More</h3>
+              {learnResults.loading && (
+                <div style={{ color: "#94a3b8", marginBottom: 8 }}>Searching…</div>
+              )}
               <ul>
-                {learnLinks.map((l, i) => (
+                {(learnResults.items.length ? learnResults.items : fallbackLearnLinks).map((l, i) => (
                   <li key={i}>
                     <a href={l.url} target="_blank" rel="noreferrer">
-                      {l.label}: {learnTopic}
+                      {l.title || l.label || l.url}
                     </a>
                   </li>
                 ))}
