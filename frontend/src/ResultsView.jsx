@@ -84,9 +84,9 @@ export default function ResultsView({ data }) {
     return String(firstSentence).slice(0, 120);
   }, [summary, key_points]);
 
-  // Trigger backend learn-more search when Learn tab is active
+  // Trigger backend learn-more search when Learn tab (main) or sidebar Learn is active
   useEffect(() => {
-    if (tab !== "learn") return;
+    if (!(tab === "learn" || sidebarTab === "learn")) return;
     const q = String(learnTopic || "").trim();
     if (!q) return;
     let aborted = false;
@@ -109,7 +109,7 @@ export default function ResultsView({ data }) {
     return () => {
       aborted = true;
     };
-  }, [tab, learnTopic]);
+  }, [tab, sidebarTab, learnTopic]);
 
   // Fallback static search links (if backend returns nothing)
   const fallbackLearnLinks = useMemo(() => {
