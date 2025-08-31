@@ -12,6 +12,7 @@ def _fallback_parse(text: str):
     key_points = []
     action_items = []
     eli5_lines = []
+    summary_lines = []
 
     section = None
     for line in text.splitlines():
@@ -25,6 +26,9 @@ def _fallback_parse(text: str):
             continue
         if re.match(r"^#+\s*(eli5|explain like i'?m 5)|^(eli5|explain like i'm 5)[:]?$", lower):
             section = "eli5"
+            continue
+        if re.match(r"^#+\s*summary|^summary[:]?$", lower):
+            section = "summary"
             continue
 
         m = re.match(r"^[-*•\u2022]\s+(.*)$", s)
@@ -41,9 +45,21 @@ def _fallback_parse(text: str):
             action_items.append(content)
         elif section == "eli5":
             eli5_lines.append(s)
+        elif section == "summary":
+            summary_lines.append(s)
 
     eli5 = " ".join(eli5_lines).strip() or text.strip()[:800]
-    return {"key_points": key_points, "action_items": action_items, "eli5": eli5}
+    # If summary section not provided, synthesize ~2 paragraphs from the start
+    if summary_lines:
+        summary = " ".join(summary_lines).strip()
+    else:
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s.strip()]
+        para1 = " ".join(sentences[:5])
+        para2 = " ".join(sentences[5:10])
+        summary = (para1 + ("\n\n" + para2 if para2 else "")).strip()
+        if len(summary) > 1200:
+            summary = summary[:1200].rsplit(" ", 1)[0] + "…"
+    return {"key_points": key_points, "action_items": action_items, "eli5": eli5, "summary": summary}
 
 
 def summarize_text(prompt_text: str):
@@ -59,7 +75,8 @@ def summarize_text(prompt_text: str):
 
     instruction = (
         "Return ONLY strict JSON with keys 'key_points' (array of concise strings), "
-        "'eli5' (string, 4-8 sentences), and 'action_items' (array of imperative strings)."
+        "'eli5' (string, 4-8 sentences), 'action_items' (array of imperative strings), and 'summary' "
+        "(string, 2-3 paragraphs, coherent and concise)."
     )
 
     data = {
@@ -84,7 +101,8 @@ def summarize_text(prompt_text: str):
             return {
                 "eli5": parsed.get("eli5") or "",
                 "key_points": parsed.get("key_points") or [],
-                "action_items": parsed.get("action_items") or []
+                "action_items": parsed.get("action_items") or [],
+                "summary": parsed.get("summary") or "",
             }
         except Exception:
             pass
@@ -96,6 +114,6 @@ def summarize_text(prompt_text: str):
         return {
             "eli5": "Error summarizing.",
             "key_points": [],
-            "action_items": []
+            "action_items": [],
+            "summary": "",
         }
-
