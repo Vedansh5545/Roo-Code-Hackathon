@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
+import ResultsView from "./ResultsView";
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:5000";
 
 export default function App() {
@@ -146,7 +147,7 @@ export default function App() {
             <h1 className="title">AI Research Summarizer</h1>
             <div className="badge">Powered by Gemini</div>
             <div className="subtitle">
-              Drop a PDF/TXT and get <kbd>Key Points</kbd>, <kbd>ELI5</kbd>, and <kbd>Action Items</kbd>.
+              Drop a PDF/TXT and get <kbd>Summary</kbd>, <kbd>Key Points</kbd>, <kbd>ELI5</kbd>, and <kbd>Action Items</kbd>.
             </div>
             <div className="beam" />
           </div>
@@ -165,7 +166,7 @@ export default function App() {
         </div>
 
         {/* RESULTS */}
-        {results && <ResultsTabs data={results} />}
+        {results && <ResultsView data={results} />}
       </div>
     </div>
   );
@@ -176,6 +177,7 @@ function ResultsTabs({ data }) {
   const key_points = data?.key_points || [];
   const eli5 = data?.eli5 || "";
   const action_items = data?.action_items || [];
+  const summary = data?.summary || "";
 
   const copyCurrent = async () => {
     let text = "";

@@ -20,4 +20,4 @@ Config
 
 API
 - `POST /api/summarize` multipart `file` (.pdf or .txt)
-- Response JSON: `{ key_points: string[], eli5: string, action_items: string[] }`
+- Response JSON: `{ key_points: string[], eli5: string, action_items: string[], summary: string }`
