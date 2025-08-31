@@ -1,5 +1,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import ResultsView from "./ResultsView";
+// Student note: App.jsx is responsible for file upload, calling the backend,
+// and rendering the results/chat experience.
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:5000";
 
 export default function App() {
@@ -12,6 +14,7 @@ export default function App() {
     document.title = "AI Research Summarizer • LIVE";
   }, []);
 
+  // Send the selected file to the backend /api/summarize endpoint
   const submit = async (e) => {
     e.preventDefault();
     const file = fileRef.current?.files?.[0];
@@ -93,9 +96,9 @@ export default function App() {
         .loadingbar::after{content:"";position:absolute;inset:0;transform:translateX(-100%);
           background:linear-gradient(90deg,transparent, rgba(59,130,246,.9), transparent);animation:sweep 1.2s ease-in-out infinite}
 
-        .results{margin-top:18px; padding:18px; max-width:860px; margin-left:auto; margin-right:auto;}
-        .tabs{display:flex;gap:8px;margin-bottom:12px;align-items:center; justify-content:center;}
-        .tab{padding:8px 12px; border-radius:999px; border:1px solid var(--border); background: rgba(15,23,42,.6); color:var(--muted); cursor:pointer; user-select:none}
+        .results{margin-top:18px; padding:18px; max-width:960px; margin-left:auto; margin-right:auto;}
+        .tabs{display:flex;gap:10px;margin-bottom:12px;align-items:center; justify-content:center;}
+        .tab{padding:8px 14px; border-radius:999px; border:1px solid var(--border); background: rgba(15,23,42,.6); color:var(--muted); cursor:pointer; user-select:none; white-space:nowrap}
         .tab.active{color:#fff;background:#111b33;border-color:#23324e}
         kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:1px 6px;border:1px solid var(--border);border-bottom-width:2px;border-radius:6px;background:#0e162c;color:#cbd5e1}
 
@@ -165,7 +168,7 @@ export default function App() {
           <strong>Tip:</strong> You can also drag & drop into the file picker above.
         </div>
 
-        {/* RESULTS */}
+        {/* RESULTS: show once backend returned data */}
         {results && <ResultsView data={results} />}
       </div>
     </div>
