@@ -1,17 +1,21 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
+// renders the tabs (Summary/Key/ELI5/Action/Learn) and the chat mode. Chat calls /api/ask and shows a right sidebar.
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:5000";
 
 export default function ResultsView({ data }) {
+  // tab = which results tab is active; mode = 'results' vs 'chat'
   const [tab, setTab] = useState("summary");
   const [mode, setMode] = useState("results"); // 'results' | 'chat'
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
-  const [sidebarTab, setSidebarTab] = useState(null); // null | 'summary' | 'key' | 'eli5' | 'action'
+  const [sidebarTab, setSidebarTab] = useState(null); // null | 'summary' | 'key' | 'eli5' | 'action' | 'learn'
 
   const summary = data?.summary || "";
   const key_points = data?.key_points || [];
   const eli5 = data?.eli5 || "";
   const action_items = data?.action_items || [];
 
+  // Copy the current tab's content to clipboard
   const copyCurrent = async () => {
     let text = "";
     if (tab === "summary") text = summary;
@@ -23,6 +27,7 @@ export default function ResultsView({ data }) {
     } catch {}
   };
 
+  // Build a markdown document and trigger a download
   const downloadMd = () => {
     const md = [
       "# Summary",
@@ -48,25 +53,47 @@ export default function ResultsView({ data }) {
     URL.revokeObjectURL(url);
   };
 
-  const handleSend = (e) => {
+  // Chat submit: POST question to backend /api/ask and append reply
+  const handleSend = async (e) => {
     e?.preventDefault?.();
     const text = input.trim();
     if (!text) return;
     const userMsg = { role: "user", content: text, ts: Date.now() };
     setMessages((m) => [...m, userMsg]);
     setInput("");
-    // Placeholder assistant reply; wire to backend later
-    setTimeout(() => {
-      const assistantMsg = {
-        role: "assistant",
-        content:
-          "I’m ready to answer questions about this paper. (Demo reply)",
-        ts: Date.now(),
-      };
+    try {
+      const res = await fetch(`${API_BASE}/api/ask`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: text }),
+      });
+      const payload = await res.json();
+      const content = payload?.answer || payload?.error || "No answer.";
+      const assistantMsg = { role: "assistant", content, ts: Date.now() };
       setMessages((m) => [...m, assistantMsg]);
-    }, 200);
+    } catch (err) {
+      const assistantMsg = { role: "assistant", content: "Error contacting AI.", ts: Date.now() };
+      setMessages((m) => [...m, assistantMsg]);
+    }
   };
 
+  const learnTopic = useMemo(() => {
+    if (key_points[0]) return String(key_points[0]).slice(0, 120);
+    const firstSentence = (summary || "").split(/(?<=[.!?])\s+/)[0] || "research topic";
+    return String(firstSentence).slice(0, 120);
+  }, [summary, key_points]);
+
+  const learnLinks = useMemo(() => {
+    const q = encodeURIComponent(learnTopic);
+    return [
+      { label: "YouTube", url: `https://www.youtube.com/results?search_query=${q}` },
+      { label: "Stack Overflow", url: `https://stackoverflow.com/search?q=${q}` },
+      { label: "GeeksforGeeks", url: `https://www.geeksforgeeks.org/?s=${q}` },
+      { label: "Wikipedia", url: `https://en.wikipedia.org/w/index.php?search=${q}` },
+    ];
+  }, [learnTopic]);
+
+  // Right-side insights sidebar (shown while chatting)
   const Sidebar = () => (
     <>
       {/* Right sidebar with tabs (visible in chat mode) */}
@@ -90,25 +117,31 @@ export default function ResultsView({ data }) {
             className={`tab ${sidebarTab === "summary" ? "active" : ""}`}
             onClick={() => setSidebarTab("summary")}
           >
-            Summary
+            📚 Summary
           </div>
           <div
             className={`tab ${sidebarTab === "key" ? "active" : ""}`}
             onClick={() => setSidebarTab("key")}
           >
-            Key Points
+            🔑 Key Points
           </div>
           <div
             className={`tab ${sidebarTab === "eli5" ? "active" : ""}`}
             onClick={() => setSidebarTab("eli5")}
           >
-            ELI5
+            👶 ELI5
           </div>
           <div
             className={`tab ${sidebarTab === "action" ? "active" : ""}`}
             onClick={() => setSidebarTab("action")}
           >
-            Action Items
+            📌 Action Items
+          </div>
+          <div
+            className={`tab ${sidebarTab === "learn" ? "active" : ""}`}
+            onClick={() => setSidebarTab("learn")}
+          >
+            🧠 Learn More
           </div>
         </div>
       </div>
@@ -134,10 +167,11 @@ export default function ResultsView({ data }) {
             }}
           >
             <div style={{ fontWeight: 700, fontSize: 16, flex: 1 }}>
-              {sidebarTab === "summary" && "Summary"}
-              {sidebarTab === "key" && "Key Points"}
-              {sidebarTab === "eli5" && "Explain Like I'm 5"}
-              {sidebarTab === "action" && "Action Items"}
+              {sidebarTab === "summary" && "📚 Summary"}
+              {sidebarTab === "key" && "🔑 Key Points"}
+              {sidebarTab === "eli5" && "👶 Explain Like I'm 5"}
+              {sidebarTab === "action" && "📌 Action Items"}
+              {sidebarTab === "learn" && "🧠 Learn More"}
             </div>
             <button
               className="button"
@@ -167,6 +201,17 @@ export default function ResultsView({ data }) {
               ))}
             </ul>
           )}
+          {sidebarTab === "learn" && (
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {learnLinks.map((l, i) => (
+                <li key={i}>
+                  <a href={l.url} target="_blank" rel="noreferrer">
+                    {l.label}: {learnTopic}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </>
@@ -181,44 +226,50 @@ export default function ResultsView({ data }) {
               className={`tab ${tab === "summary" ? "active" : ""}`}
               onClick={() => setTab("summary")}
             >
-              Summary
+              📚 Summary
             </div>
             <div
               className={`tab ${tab === "key" ? "active" : ""}`}
               onClick={() => setTab("key")}
             >
-              Key Points
+              🔑 Key Points
             </div>
             <div
               className={`tab ${tab === "eli5" ? "active" : ""}`}
               onClick={() => setTab("eli5")}
             >
-              ELI5
+              👶 ELI5
             </div>
             <div
               className={`tab ${tab === "action" ? "active" : ""}`}
               onClick={() => setTab("action")}
             >
-              Action Items
+              📌 Action Items
+            </div>
+            <div
+              className={`tab ${tab === "learn" ? "active" : ""}`}
+              onClick={() => setTab("learn")}
+            >
+              🧠 Learn More
             </div>
             <div style={{ flex: 1 }} />
             <button className="button" onClick={copyCurrent}>
               Copy
             </button>
             <button className="button" onClick={downloadMd}>
-              Download .md
+              Download
             </button>
           </div>
 
           {tab === "summary" && (
             <section>
-              <h3>Summary</h3>
+              <h3>📚 Summary</h3>
               <p>{summary}</p>
             </section>
           )}
           {tab === "key" && (
             <section>
-              <h3>Key Points</h3>
+              <h3>🔑 Key Points</h3>
               <ul>
                 {key_points.map((p, i) => (
                   <li key={i}>{p}</li>
@@ -228,16 +279,30 @@ export default function ResultsView({ data }) {
           )}
           {tab === "eli5" && (
             <section>
-              <h3>Explain Like I'm 5</h3>
+              <h3>👶 Explain Like I'm 5</h3>
               <p>{eli5}</p>
             </section>
           )}
           {tab === "action" && (
             <section>
-              <h3>Action Items</h3>
+              <h3>📌 Action Items</h3>
               <ul>
                 {action_items.map((a, i) => (
                   <li key={i}>{a}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {tab === "learn" && (
+            <section>
+              <h3>🧠 Learn More</h3>
+              <ul>
+                {learnLinks.map((l, i) => (
+                  <li key={i}>
+                    <a href={l.url} target="_blank" rel="noreferrer">
+                      {l.label}: {learnTopic}
+                    </a>
+                  </li>
                 ))}
               </ul>
             </section>
