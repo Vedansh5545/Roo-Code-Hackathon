@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:5000";
 
 export default function App() {
   const [loading, setLoading] = useState(false);
@@ -17,7 +18,7 @@ export default function App() {
     const fd = new FormData(); fd.append("file", file);
     setLoading(true); setResults(null);
     try {
-      const res = await fetch("http://127.0.0.1:5000/api/summarize", { method: "POST", body: fd });
+      const res = await fetch(`${API_BASE}/api/summarize`, { method: "POST", body: fd });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setResults(data);
