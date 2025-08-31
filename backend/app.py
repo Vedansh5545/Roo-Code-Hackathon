@@ -1,28 +1,45 @@
-from flask import Flask, jsonify, request
+from flask import Flask, request, jsonify
 from flask_cors import CORS
-from dotenv import load_dotenv
+from summarize import summarize_text
 import os
-from summarize import summarize_file
+import fitz  # PyMuPDF
+from dotenv import load_dotenv
 
 load_dotenv()
-api_key = os.getenv("GEMINI_API_KEY")
 
 app = Flask(__name__)
 CORS(app)
 
 @app.route("/api/summarize", methods=["POST"])
 def summarize():
-    file = request.files.get("file")
-    if not file:
-        return jsonify({"error": "No file uploaded"}), 400
-
     try:
-        text = file.read().decode("utf-8", errors="ignore")
-        result = summarize_file(text)  # Call your Gemini summarizer logic here
-        return jsonify(result)
+        file = request.files["file"]
+        filename = file.filename
+
+        print(f"📄 Received file: {filename}")
+
+        if filename.endswith(".pdf"):
+            # ✅ Extract text from PDF
+            pdf_bytes = file.read()
+            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            text = "\n".join([page.get_text() for page in doc])
+        elif filename.endswith(".txt"):
+            text = file.read().decode("utf-8")
+        else:
+            return jsonify({"error": "Unsupported file type."}), 400
+
+        print(f"📝 Extracted text (first 300 chars):\n{text[:300]}")
+
+        if not text.strip():
+            return jsonify({"error": "No text extracted from file."}), 400
+
+        summary = summarize_text(text)
+        print("✅ Gemini response received.")
+        return jsonify(summary)
+
     except Exception as e:
-        print("Error:", str(e))
-        return jsonify({"error": "Something went wrong"}), 500
+        print("🚨 Error in summarize route:", str(e))
+        return jsonify({"error": "Summarization failed."}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
